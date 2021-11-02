@@ -1,0 +1,10 @@
+missions=(priority-change priority-donate-one priority-donate-multiple priority-donate-multiple2 priority-donate-nest priority-donate-sema priority-donate-lower priority-donate-chain priority-fifo priority-preempt priority-sema priority-condvar)
+(cd build
+for i in ${missions[*]}
+do
+	echo ------------------------------------------------------------
+	echo "			$i			"
+	echo ------------------------------------------------------------
+	rm -f tests/threads/${i}.output
+	make tests/threads/${i}.result
+done)

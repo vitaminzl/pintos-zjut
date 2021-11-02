@@ -1,0 +1,11 @@
+missions=(alarm-single alarm-multiple alarm-simultaneous alarm-priority alarm-zero alarm-negative)
+
+(cd build
+for i in ${missions[*]}
+do
+	echo ------------------------------------------------------------
+	echo "			$i			"
+	echo ------------------------------------------------------------
+	rm -f tests/threads/${i}.output
+	make tests/threads/${i}.result
+done)
