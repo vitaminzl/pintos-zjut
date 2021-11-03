@@ -1,11 +1,31 @@
+unset missions
 missions=(alarm-single alarm-multiple alarm-simultaneous alarm-priority alarm-zero alarm-negative)
-
-(cd build
-for i in ${missions[*]}
-do
+if [[ $1 = "m" ]]
+then
+	cnt=0
+	for i in ${missions[*]}
+	do
+		echo $cnt:$i
+		let "cnt++"
+	done	
+else
+	# compute number of missions
+	((num=${#missions[@]}-1)) 
+	if [[ $1 && $1 != "v" && $1 -le $num && $1 -ge 0 ]]
+		then m=${missions[$1]}; unset missions; missions=($m)
+	fi
+	# execute instructions	
+	(cd build
+	for i in ${missions[*]}
+	do
 	echo ------------------------------------------------------------
 	echo "			$i			"
 	echo ------------------------------------------------------------
 	rm -f tests/threads/${i}.output
-	make tests/threads/${i}.result
-done)
+	unset op
+	if [[ $1 = 'v' || $2 = 'v' ]]
+	then op='VERBOSE=1'
+	fi
+	make tests/threads/${i}.result $op
+	done)
+fi
