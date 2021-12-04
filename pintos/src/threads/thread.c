@@ -28,6 +28,9 @@ static struct list ready_list;
    when they are first scheduled and removed when they exit. */
 static struct list all_list;
 
+/* 休眠的链表，用于存储休眠线程的队列 */
+static struct list sleep_queue;
+
 /* Idle thread. */
 static struct thread *idle_thread;
 

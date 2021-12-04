@@ -84,6 +84,16 @@ timer_elapsed (int64_t then)
   return timer_ticks () - then;
 }
 
+/*-------------------------mycode-------------------------*/
+/* compare priority when push it into the sleep queue. */
+bool 
+thread_priority_cmp(const struct list_elem* a, const struct list_elem* b, void* aux UNUSED)
+{
+  return list_entry(a, struct thread, elem)->priority > list_entry(b, struct thread, elem)->priority;
+
+}
+/*-------------------------mycode-------------------------*/
+
 /* Sleeps for approximately TICKS timer ticks.  Interrupts must
    be turned on. */
 void
@@ -92,8 +102,14 @@ timer_sleep (int64_t ticks)
   int64_t start = timer_ticks ();
 
   ASSERT (intr_get_level () == INTR_ON);
-  while (timer_elapsed (start) < ticks) 
-    thread_yield ();
+  /*-------------------------mycode-------------------------*/
+  enum intr_level old_level = intr_disable();
+  struct thread* cur_thread = thread_current();
+  cur_thread -> sleepticks = ticks;
+  list_insert_ordered(sleep_queue, cur_thread->elem, thread_priority_cmp, NULL);
+  thread_block();
+  intr_set_level(old_level);
+  /*-------------------------mycode-------------------------*/
 }
 
 /* Sleeps for approximately MS milliseconds.  Interrupts must be

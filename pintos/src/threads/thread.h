@@ -92,6 +92,15 @@ struct thread
 
     /* Shared between thread.c and synch.c. */
     struct list_elem elem;              /* List element. */
+	
+    /* -----------------------------mycode------------------------------ */
+   
+    int sleepticks;			/* How may time to sleep */
+    bool sleepflag;			/* sleep or not */
+    /* sleep queue */
+    struct list_elem sleepelem;		/* the elem of sleep queue */
+
+    /* -----------------------------mycode------------------------------ */
 
 #ifdef USERPROG
     /* Owned by userprog/process.c. */
@@ -138,4 +147,7 @@ void thread_set_nice (int);
 int thread_get_recent_cpu (void);
 int thread_get_load_avg (void);
 
+/*-------------------------mycode-------------------------*/
+bool thread_priority_cmp(const struct list_elem* a, const struct list_elem* b, void* aux UNUSED)
+/*-------------------------mycode-------------------------*/
 #endif /* threads/thread.h */
