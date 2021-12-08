@@ -97,12 +97,12 @@ timer_sleep (int64_t ticks)
   /* 关闭中断，基操 */
   enum intr_level old_level = intr_disable();
       
-  /* 获取当前线程，并存入休眠时间，塞入sleep队列中，阻塞进程 */
-  struct thread* cur_thread = thread_current();
-  cur_thread -> sleepticks = ticks;
-  list_insert_ordered (&sleep_queue, &cur_thread->elem, (list_less_func *) &thread_cmp_priority, NULL);
-  thread_block();
-        
+  /* 获取当前线程，并存入休眠时间，阻塞进程 */
+  if(ticks > 0)
+  {
+    thread_current() -> sleepticks = ticks;
+    thread_block();
+  }      
   intr_set_level(old_level);
   /*-------------------------mycode-------------------------*/
 }
@@ -186,11 +186,13 @@ timer_print_stats (void)
 void 
 check_and_unblock(struct thread* t, void*aux UNUSED)
 {
-  t->sleepticks --;
-  if (t->sleepticks == 0)
+  if (t->status == THREAD_BLOCKED && t->sleepticks > 0)
   {
-    list_remove(&t->sleepelem);
-    thread_unblock(t);
+    t->sleepticks --;
+    if (t->sleepticks <= 0)
+    {
+      thread_unblock(t);
+    }
   }
 
 }
@@ -206,7 +208,7 @@ timer_interrupt (struct intr_frame *args UNUSED)
   ticks++;
   /*-------------------------mycode-------------------------*/
 
-  sleep_foreach (check_and_unblock, NULL);
+  thread_foreach (check_and_unblock, NULL);
 
   /*-------------------------mycode-------------------------*/
   thread_tick ();

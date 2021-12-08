@@ -93,18 +93,14 @@ thread_init (void)
   list_init (&ready_list);
   list_init (&all_list);
 
-  /*------------------------mycode--------------------------*/
-
-  list_init (&sleep_queue);
-
-  /*------------------------mycode--------------------------*/
-
-
   /* Set up a thread structure for the running thread. */
   initial_thread = running_thread ();
   init_thread (initial_thread, "main", PRI_DEFAULT);
   initial_thread->status = THREAD_RUNNING;
   initial_thread->tid = allocate_tid ();
+  /*-------------------------mycode-------------------------*/
+  initial_thread->sleepticks = 0;
+  /*-------------------------mycode-------------------------*/
 }
 
 /* Starts preemptive thread scheduling by enabling interrupts.
@@ -360,23 +356,6 @@ thread_foreach (thread_action_func *func, void *aux)
     }
 }
 
-/*-------------------------mycode-------------------------*/	
-
-void
-sleep_foreach (thread_action_func *func, void *aux)
-{
-  struct list_elem *e;
-
-  ASSERT (intr_get_level () == INTR_OFF);
-
-  for (e = list_begin (&sleep_queue); e != list_end (&sleep_queue); e = list_next (e))
-  {
-    struct thread *t = list_entry (e, struct thread, sleepelem);
-    func (t, aux);
-  }
-}
-
-/*-------------------------mycode-------------------------*/	
 
 /* Sets the current thread's priority to NEW_PRIORITY. */
 void

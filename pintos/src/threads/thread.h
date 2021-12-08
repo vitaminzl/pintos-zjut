@@ -96,8 +96,6 @@ struct thread
     /*------------------------mycode--------------------------*/ 
 
     int sleepticks;			/* How may time to sleep */
-    /* sleep queue */
-    struct list_elem sleepelem;		/* the elem of sleep queue */
 
     /*------------------------mycode--------------------------*/ 
 
@@ -146,9 +144,7 @@ int thread_get_recent_cpu (void);
 int thread_get_load_avg (void);
 
 /*-------------------------mycode-------------------------*/
-static struct list sleep_queue;
 void check_and_unblock(struct thread* t, void*aux UNUSED);
-void sleep_foreach (thread_action_func *func, void *aux);
 bool thread_cmp_priority (const struct list_elem *a, const struct list_elem *b, void *aux UNUSED);
 /*-------------------------mycode-------------------------*/
 #endif /* threads/thread.h */
