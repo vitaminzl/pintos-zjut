@@ -28,13 +28,6 @@ static struct list ready_list;
    when they are first scheduled and removed when they exit. */
 static struct list all_list;
 
-/*------------------------mycode--------------------------*/
-
-/* 休眠的链表，用于存储休眠线程的队列 */
-static struct list sleep_queue;
-
-/*------------------------mycode--------------------------*/
-
 /* Idle thread. */
 static struct thread *idle_thread;
 
@@ -102,7 +95,7 @@ thread_init (void)
 
   /*------------------------mycode--------------------------*/
 
-  list_init (&sleep_queue)
+  list_init (&sleep_queue);
 
   /*------------------------mycode--------------------------*/
 
@@ -224,6 +217,7 @@ thread_create (const char *name, int priority,
    This function must be called with interrupts turned off.  It
    is usually a better idea to use one of the synchronization
    primitives in synch.h. */
+
 void
 thread_block (void) 
 {
@@ -234,8 +228,8 @@ thread_block (void)
   schedule ();
 }
 
-/*-------------------------mycode-------------------------*/
 
+/*-------------------------mycode-------------------------*/	
 /* 比较线程优先级的函数 */
 bool
 thread_cmp_priority (const struct list_elem *a, const struct list_elem *b, void *aux UNUSED)
@@ -268,7 +262,7 @@ thread_unblock (struct thread *t)
   /*-------------------------mycode-------------------------*/
 
   /* 按优先级插入ready队列，以实现优先级唤醒的目的 */
-  list_insert_ordered (&ready_list, &t->elem);
+  list_insert_ordered (&ready_list, &t->elem, (list_less_func *) &thread_cmp_priority, NULL);
 
   /*-------------------------mycode-------------------------*/
   t->status = THREAD_READY;
@@ -340,8 +334,10 @@ thread_yield (void)
   ASSERT (!intr_context ());
 
   old_level = intr_disable ();
+  /*-------------------------mycode-------------------------*/	
   if (cur != idle_thread) 
-    list_push_back (&ready_list, &cur->elem);
+    list_insert_ordered (&ready_list, &cur->elem, (list_less_func *) &thread_cmp_priority, NULL);
+  /*-------------------------mycode-------------------------*/	
   cur->status = THREAD_READY;
   schedule ();
   intr_set_level (old_level);
@@ -363,6 +359,24 @@ thread_foreach (thread_action_func *func, void *aux)
       func (t, aux);
     }
 }
+
+/*-------------------------mycode-------------------------*/	
+
+void
+sleep_foreach (thread_action_func *func, void *aux)
+{
+  struct list_elem *e;
+
+  ASSERT (intr_get_level () == INTR_OFF);
+
+  for (e = list_begin (&sleep_queue); e != list_end (&sleep_queue); e = list_next (e))
+  {
+    struct thread *t = list_entry (e, struct thread, sleepelem);
+    func (t, aux);
+  }
+}
+
+/*-------------------------mycode-------------------------*/	
 
 /* Sets the current thread's priority to NEW_PRIORITY. */
 void

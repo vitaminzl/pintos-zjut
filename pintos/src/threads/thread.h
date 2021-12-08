@@ -124,7 +124,6 @@ void thread_print_stats (void);
 typedef void thread_func (void *aux);
 tid_t thread_create (const char *name, int priority, thread_func *, void *);
 
-void thread_block (void);
 void thread_unblock (struct thread *);
 
 struct thread *thread_current (void);
@@ -147,8 +146,9 @@ int thread_get_recent_cpu (void);
 int thread_get_load_avg (void);
 
 /*-------------------------mycode-------------------------*/
+static struct list sleep_queue;
 void check_and_unblock(struct thread* t, void*aux UNUSED);
-void sleep_foreach (thread_action_func *func, void *aux)
-bool thread_cmp_priority (const struct list_elem *a, const struct list_elem *b, void *aux UNUSED)
+void sleep_foreach (thread_action_func *func, void *aux);
+bool thread_cmp_priority (const struct list_elem *a, const struct list_elem *b, void *aux UNUSED);
 /*-------------------------mycode-------------------------*/
 #endif /* threads/thread.h */

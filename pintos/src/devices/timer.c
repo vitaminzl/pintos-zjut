@@ -100,7 +100,7 @@ timer_sleep (int64_t ticks)
   /* 获取当前线程，并存入休眠时间，塞入sleep队列中，阻塞进程 */
   struct thread* cur_thread = thread_current();
   cur_thread -> sleepticks = ticks;
-  list_push_back(sleep_queue, cur_thread->elem);
+  list_insert_ordered (&sleep_queue, &cur_thread->elem, (list_less_func *) &thread_cmp_priority, NULL);
   thread_block();
         
   intr_set_level(old_level);
@@ -187,27 +187,14 @@ void
 check_and_unblock(struct thread* t, void*aux UNUSED)
 {
   t->sleepticks --;
-  if (!sleepticks)
+  if (t->sleepticks == 0)
   {
-    list_remove(t->sleepelem);
+    list_remove(&t->sleepelem);
     thread_unblock(t);
   }
 
 }
 
-void
-sleep_foreach (thread_action_func *func, void *aux)
-{
-  struct list_elem *e;
-
-  ASSERT (intr_get_level () == INTR_OFF);
-
-  for (e = list_begin (&sleep_queue); e != list_end (&sleep_queue); e = list_next (e))
-  {
-    struct thread *t = list_entry (e, struct thread, sleepelem);
-    func (t, aux);
-  }
-}
 
 /*-------------------------mycode-------------------------*/
 
@@ -219,7 +206,7 @@ timer_interrupt (struct intr_frame *args UNUSED)
   ticks++;
   /*-------------------------mycode-------------------------*/
 
-  sleep_foreach (check_and_unblock);
+  sleep_foreach (check_and_unblock, NULL);
 
   /*-------------------------mycode-------------------------*/
   thread_tick ();
