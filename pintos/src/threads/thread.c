@@ -28,8 +28,12 @@ static struct list ready_list;
    when they are first scheduled and removed when they exit. */
 static struct list all_list;
 
+/*------------------------mycode--------------------------*/
+
 /* 休眠的链表，用于存储休眠线程的队列 */
 static struct list sleep_queue;
+
+/*------------------------mycode--------------------------*/
 
 /* Idle thread. */
 static struct thread *idle_thread;
@@ -95,6 +99,13 @@ thread_init (void)
   lock_init (&tid_lock);
   list_init (&ready_list);
   list_init (&all_list);
+
+  /*------------------------mycode--------------------------*/
+
+  list_init (&sleep_queue)
+
+  /*------------------------mycode--------------------------*/
+
 
   /* Set up a thread structure for the running thread. */
   initial_thread = running_thread ();
@@ -223,6 +234,20 @@ thread_block (void)
   schedule ();
 }
 
+/*-------------------------mycode-------------------------*/
+
+/* 比较线程优先级的函数 */
+bool
+thread_cmp_priority (const struct list_elem *a, const struct list_elem *b, void *aux UNUSED)
+{
+  return list_entry(a, struct thread, elem)->priority > list_entry(b, struct thread, elem)->priority;
+}
+
+/*-------------------------mycode-------------------------*/
+
+
+
+
 /* Transitions a blocked thread T to the ready-to-run state.
    This is an error if T is not blocked.  (Use thread_yield() to
    make the running thread ready.)
@@ -240,7 +265,12 @@ thread_unblock (struct thread *t)
 
   old_level = intr_disable ();
   ASSERT (t->status == THREAD_BLOCKED);
-  list_push_back (&ready_list, &t->elem);
+  /*-------------------------mycode-------------------------*/
+
+  /* 按优先级插入ready队列，以实现优先级唤醒的目的 */
+  list_insert_ordered (&ready_list, &t->elem);
+
+  /*-------------------------mycode-------------------------*/
   t->status = THREAD_READY;
   intr_set_level (old_level);
 }

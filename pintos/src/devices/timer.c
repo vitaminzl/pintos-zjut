@@ -84,15 +84,6 @@ timer_elapsed (int64_t then)
   return timer_ticks () - then;
 }
 
-/*-------------------------mycode-------------------------*/
-/* compare priority when push it into the sleep queue. */
-bool 
-thread_priority_cmp(const struct list_elem* a, const struct list_elem* b, void* aux UNUSED)
-{
-  return list_entry(a, struct thread, elem)->priority > list_entry(b, struct thread, elem)->priority;
-
-}
-/*-------------------------mycode-------------------------*/
 
 /* Sleeps for approximately TICKS timer ticks.  Interrupts must
    be turned on. */
@@ -103,11 +94,15 @@ timer_sleep (int64_t ticks)
 
   ASSERT (intr_get_level () == INTR_ON);
   /*-------------------------mycode-------------------------*/
+  /* 关闭中断，基操 */
   enum intr_level old_level = intr_disable();
+      
+  /* 获取当前线程，并存入休眠时间，塞入sleep队列中，阻塞进程 */
   struct thread* cur_thread = thread_current();
   cur_thread -> sleepticks = ticks;
-  list_insert_ordered(sleep_queue, cur_thread->elem, thread_priority_cmp, NULL);
+  list_push_back(sleep_queue, cur_thread->elem);
   thread_block();
+        
   intr_set_level(old_level);
   /*-------------------------mycode-------------------------*/
 }
@@ -181,12 +176,52 @@ timer_print_stats (void)
 {
   printf ("Timer: %"PRId64" ticks\n", timer_ticks ());
 }
-
+
+
+
+/*-------------------------mycode-------------------------*/
+
+/*对于sleep_queue中的每一个进程，都进行sleepticks--的操作，
+ 并检查是否到了休眠时间，即sleepticks==0?  */
+void 
+check_and_unblock(struct thread* t, void*aux UNUSED)
+{
+  t->sleepticks --;
+  if (!sleepticks)
+  {
+    list_remove(t->sleepelem);
+    thread_unblock(t);
+  }
+
+}
+
+void
+sleep_foreach (thread_action_func *func, void *aux)
+{
+  struct list_elem *e;
+
+  ASSERT (intr_get_level () == INTR_OFF);
+
+  for (e = list_begin (&sleep_queue); e != list_end (&sleep_queue); e = list_next (e))
+  {
+    struct thread *t = list_entry (e, struct thread, sleepelem);
+    func (t, aux);
+  }
+}
+
+/*-------------------------mycode-------------------------*/
+
+
 /* Timer interrupt handler. */
 static void
 timer_interrupt (struct intr_frame *args UNUSED)
 {
   ticks++;
+  /*-------------------------mycode-------------------------*/
+
+  sleep_foreach (check_and_unblock);
+
+  /*-------------------------mycode-------------------------*/
   thread_tick ();
 }
 
