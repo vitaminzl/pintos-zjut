@@ -203,6 +203,14 @@ thread_create (const char *name, int priority,
 
   /* Add to run queue. */
   thread_unblock (t);
+  /*-------------------------mycode-------------------------*/
+  
+  if (thread_current()->priority < priority)
+  {
+    thread_yield();
+  }
+
+  /*-------------------------mycode-------------------------*/
 
   return tid;
 }
@@ -491,7 +499,7 @@ init_thread (struct thread *t, const char *name, int priority)
   t->magic = THREAD_MAGIC;
 
   old_level = intr_disable ();
-  list_push_back (&all_list, &t->allelem);
+  list_insert_ordered (&all_list, &t->allelem, &thread_cmp_priority, NULL);
   intr_set_level (old_level);
 }
 
