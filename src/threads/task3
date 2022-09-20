@@ -1,0 +1,31 @@
+unset missions
+missions=(mlfqs-load-1 mlfqs-load-60 mlfqs-load-avg mlfqs-recent-1 mlfqs-fair-2 mlfqs-fair-20 mlfqs-nice-2 mlfqs-nice-10 mlfqs-block)
+if [[ $1 = "m" ]]
+then
+	cnt=0
+	for i in ${missions[*]}
+	do
+		echo $cnt:$i
+		let "cnt++"
+	done	
+else
+	# compute number of missions
+	((num=${#missions[@]}-1)) 
+	if [[ $1 && $1 != "v" && $1 -le $num && $1 -ge 0 ]]
+		then m=${missions[$1]}; unset missions; missions=($m)
+	fi
+	# execute instructions	
+	(cd build
+	for i in ${missions[*]}
+	do
+	echo ------------------------------------------------------------
+	echo "			$i			"
+	echo ------------------------------------------------------------
+	rm -f tests/threads/${i}.output
+	unset op
+	if [[ $1 = 'v' || $2 = 'v' ]]
+	then op='VERBOSE=1'
+	fi
+	make tests/threads/${i}.result $op
+	done)
+fi

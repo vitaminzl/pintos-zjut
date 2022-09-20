@@ -4,6 +4,8 @@
 #include <debug.h>
 #include <list.h>
 #include <stdint.h>
+#include "threads/synch.h"
+#include "fixed_point.h"
 
 /* States in a thread's life cycle. */
 enum thread_status
@@ -23,6 +25,35 @@ typedef int tid_t;
 #define PRI_MIN 0                       /* Lowest priority. */
 #define PRI_DEFAULT 31                  /* Default priority. */
 #define PRI_MAX 63                      /* Highest priority. */
+/*--------------------- Added by ZL ----------------------*/ 
+#define NICE_MIN -20 
+#define NICE_MAX 20
+#define UNIT32_MAX ((unsigned int)0xffffffff)
+
+struct lock file_lock;
+
+#ifdef USERPROG
+/* 记录子线程的一些信息，tid、是否处于就绪状态
+ * 信号量、以及退出码 */
+struct child_thread
+{
+  tid_t tid;				/* 子进程pid */
+  bool is_waited;			/* 是否被等待过了 */
+  struct list_elem elem;		/* 子进程队列节点 */
+  struct semaphore sema;		/* 信号量 */
+  int exit_code;			/* 退出信息 */
+};
+
+struct thread_file
+{
+  int fd;
+  struct file* file;
+  struct list_elem elem;
+};
+
+#endif
+
+/*--------------------------------------------------------*/ 
 
 /* A kernel thread or user process.
 
@@ -78,6 +109,7 @@ typedef int tid_t;
    the run queue (thread.c), or it can be an element in a
    semaphore wait list (synch.c).  It can be used these two ways
    only because they are mutually exclusive: only a thread in the
+   T_REACHED ();_tid
    ready state is on the run queue, whereas only a thread in the
    blocked state is on a semaphore wait list. */
 struct thread
@@ -93,11 +125,35 @@ struct thread
     /* Shared between thread.c and synch.c. */
     struct list_elem elem;              /* List element. */
 	
-    /*------------------------mycode--------------------------*/ 
+    /*--------------------- Added by ZL ----------------------*/ 
 
-    int sleepticks;			/* How may time to sleep */
+    int sleepticks;			/* 剩余休眠的时间 */
+    int original_priority;              /* 原始优先级 */
+    struct list locks;                  /* 占有锁的队列 */
+    struct lock* lock_applying; 	/* 正在申请的锁 */
+    int nice;
+    int recent_cpu;
 
-    /*------------------------mycode--------------------------*/ 
+#ifdef USERPROG
+    /* 进程相关系统调用的数据结构 */
+    struct thread* parent;		/* 父进程指针，主要用来让子进程告诉父
+					   进程自己的装载情况 */
+    struct child_thread* child;		/* 子进程 */
+    struct list child_list;		/* 子进程队列 */
+    struct semaphore sema;		/* 信号量，用于父子进程的同步，主要应
+					   用于它们之间的wait */
+    bool is_load_success;		/* 子进程是否装载成功，并由子进程通过
+					   parrent指针对该标志位置位 */
+    int exit_code;			/* 进程终止信息 */
+
+
+    /* 文件操作系统调用的数据结构 */
+    int fd;
+    struct list file_list;
+    struct file* file_owned;
+
+#endif
+    /*--------------------------------------------------------*/ 
 
 #ifdef USERPROG
     /* Owned by userprog/process.c. */
@@ -107,6 +163,7 @@ struct thread
     /* Owned by thread.c. */
     unsigned magic;                     /* Detects stack overflow. */
   };
+
 
 /* If false (default), use round-robin scheduler.
    If true, use multi-level feedback queue scheduler.
@@ -143,8 +200,24 @@ void thread_set_nice (int);
 int thread_get_recent_cpu (void);
 int thread_get_load_avg (void);
 
-/*-------------------------mycode-------------------------*/
+/*--------------------- Added by ZL ----------------------*/ 
 void check_and_unblock(struct thread* t, void*aux UNUSED);
 bool thread_cmp_priority (const struct list_elem *a, const struct list_elem *b, void *aux UNUSED);
-/*-------------------------mycode-------------------------*/
+void thread_hold_the_lock(struct lock* lock);
+bool lock_cmp_priority(const struct list_elem* a, const struct list_elem* b, void* aux UNUSED);
+void remove_lock (struct lock *lock);
+/* 从捐赠者队列中获取最高优先级  */
+void update_priority(struct thread* t);
+void update_mlfqs_avg_and_recent_cpu(void);
+void calculate_mlfqs_load_avg(void);
+void update_mlfqs_priority_aux(struct thread* t, void* aux UNUSED);
+void update_mlfqs_priority(void);
+void update_mlfqs_recent_cpu_aux(struct thread* t, void* aux UNUSED);
+void update_mlfqs_recent_cpu(void);
+bool is_idle_thread(struct thread* t);
+void mlfqs_update_rc_la_pr(void);
+bool is_thread_started(void);
+void close_all_files(void);
+
+/*--------------------------------------------------------*/
 #endif /* threads/thread.h */

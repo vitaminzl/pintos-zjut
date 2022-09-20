@@ -29,6 +29,11 @@ tid_t
 process_execute (const char *file_name) 
 {
   char *fn_copy;
+  /*-------------------- Added by ZL -----------------------*/
+  char *fn_copy_for_thread_name;
+  char *thread_name, *save_ptr; 
+  fn_copy_for_thread_name = palloc_get_page (0);
+  /*--------------------------------------------------------*/
   tid_t tid;
 
   /* Make a copy of FILE_NAME.
@@ -38,10 +43,28 @@ process_execute (const char *file_name)
     return TID_ERROR;
   strlcpy (fn_copy, file_name, PGSIZE);
 
+  /*-------------------- Added by ZL -----------------------*/
+  /* 复制一个字符串，用于分割文件名作为线程名 */
+  strlcpy (fn_copy_for_thread_name, file_name, PGSIZE);
+  thread_name = strtok_r (fn_copy_for_thread_name, " ", &save_ptr);
+  /*--------------------------------------------------------*/
+
   /* Create a new thread to execute FILE_NAME. */
-  tid = thread_create (file_name, PRI_DEFAULT, start_process, fn_copy);
-  if (tid == TID_ERROR)
+  tid = thread_create (thread_name, PRI_DEFAULT, start_process, fn_copy);
+  /*-------------------- Added by ZL -----------------------*/
+  /* 别忘记把它释放掉 */
+  palloc_free_page (fn_copy_for_thread_name); 
+
+  if (tid == TID_ERROR){
     palloc_free_page (fn_copy); 
+    return tid;
+  }
+
+  /* 等待子进程装载，如果装载不成功则返回ERROR */
+  sema_down(&thread_current()->sema);
+  if(!thread_current()->is_load_success)
+    return TID_ERROR;
+  /*--------------------------------------------------------*/
   return tid;
 }
 
@@ -59,12 +82,70 @@ start_process (void *file_name_)
   if_.gs = if_.fs = if_.es = if_.ds = if_.ss = SEL_UDSEG;
   if_.cs = SEL_UCSEG;
   if_.eflags = FLAG_IF | FLAG_MBS;
-  success = load (file_name, &if_.eip, &if_.esp);
+  /*-------------------- Added by ZL -----------------------*/
+  /* 将真正的文件名装载进去，会造成字符串修改，而文件名
+   * 也是参数的一部分，因此我们使用original来保存
+   * 原字符串的副本  */
+  char *real_file_name, *original_name, *save_ptr; 
+  original_name = (char*) malloc(strlen(file_name)+1);
+  strlcpy (original_name, file_name, strlen(file_name)+1);
+  real_file_name = strtok_r (file_name_, " ", &save_ptr);
+  /*--------------------------------------------------------*/
+  success = load (real_file_name, &if_.eip, &if_.esp);
 
   /* If load failed, quit. */
   palloc_free_page (file_name);
-  if (!success) 
-    thread_exit ();
+
+  /*-------------------- Added by ZL -----------------------*/
+  /* 显然只有在成功装载之后，我们才需要参数传递 
+   * 以下过程，就是把参数压入栈中，此处的顺序是自左向右
+   * 这并没有什么关系，因为我们使用二级指针对参数压栈
+   * 只需要保证压入二级指针时，是自右向左即可。
+   * argv存储的是各个参数的首地址，即实际的二级指针
+   * 而386系统中，地址是32位，因此使用int型。
+   * argc则存储的是参数的个数。
+   * 由于参数个数未知，我们使用动态分配地址的方法。 */
+
+  int argc = 0;
+  int argv_size = 50;
+  int* argv = (int*) malloc(argv_size * sizeof(int));
+  char* token;
+
+  if(success)
+  {
+    for (token = strtok_r (original_name, " ", &save_ptr); token != NULL;
+		             token = strtok_r (NULL, " ", &save_ptr))
+    {
+      /* 字符串是低地址往高地址存，并且注意'\0'也是字符串
+       * 的一部分 */
+      if_.esp -= strlen(token)+1;
+      memcpy(if_.esp, token, strlen(token)+1);
+      argv[argc++] = (int) if_.esp;
+      if (argc > argv_size)
+      {
+        //  如果空间不够，得重新分配 
+        argv_size += 10;
+        realloc(argv, argv_size * sizeof(int* )); 
+      }
+    }
+
+    push_arg_and_retaddr(&if_.esp, argc, argv);
+
+  }
+ 
+
+  /* 告诉父线程自己装载情况，并让父线程继续执行 */
+  thread_current()->parent->is_load_success = success;
+  sema_up(&thread_current()->parent->sema);
+
+  free(original_name);
+  free(argv);
+
+  if(!success)
+    thread_exit();
+
+ 
+  /*--------------------------------------------------------*/
 
   /* Start the user process by simulating a return from an
      interrupt, implemented by intr_exit (in
@@ -75,6 +156,49 @@ start_process (void *file_name_)
   asm volatile ("movl %0, %%esp; jmp intr_exit" : : "g" (&if_) : "memory");
   NOT_REACHED ();
 }
+
+
+/*-------------------- Added by ZL -----------------------*/
+/* 自右向左压入参数的首地址，即二级指针
+ * 此外还需压入参数的个数，以及返回地址0
+ * 此处esp使用的是二级指针，原因在于，我们要修改的是
+ * esp指针(即保存的地址)的值，而非esp所指向的值 */
+void 
+push_arg_and_retaddr(void** esp, int argc, int* argv)
+{
+
+  /* 4字节对齐 */
+	/*
+  int rest = (int)*esp % 4;
+  for (int i = 0; i < rest; i++)
+  {
+    *esp --;	  
+    *esp = (int)*esp;
+
+  }
+  */
+  *esp = (int)*esp & 0xfffffffc;
+  *esp -= 4;
+  *(int *) *esp = 0;
+
+  /* 自右向左依次压入一级指针argv* */
+  for (int i = argc - 1; i >= 0; i--)
+  {	
+     *esp -= 4;
+     *(int *) *esp = argv[i];
+  }
+  /* 分别压入二级指针argv**，即argv[0]的地址
+   * 参数个数，返回地址0 */
+  *esp -= 4;
+  *(int *) *esp = (int) *esp + 4;
+  *esp -= 4;
+  *(int *) *esp = argc;
+  *esp -= 4;
+  *(int *) *esp = 0;
+
+}
+
+/*--------------------------------------------------------*/
 
 /* Waits for thread TID to die and returns its exit status.  If
    it was terminated by the kernel (i.e. killed due to an
@@ -88,7 +212,37 @@ start_process (void *file_name_)
 int
 process_wait (tid_t child_tid UNUSED) 
 {
-  return -1;
+ 
+  /*-------------------- Added by ZL -----------------------*/
+  /* 遍历整个child队列，如果发现child已经没被等待过了，那么
+   * 阻塞自己，等待child执行，并置位等待标志位。如果child已经
+   * 被等待过了，说明这是不正常的，应当返回-1。此外，子进程队列
+   * 中没有对应的子进程ID，这也是非正常现象。  */
+  struct list* child_list = &thread_current()->child_list;
+  struct list_elem* child_elem = list_begin(child_list);
+  struct child_thread* cur_child = NULL; 
+  
+  while(child_elem != list_end(child_list))
+  { 
+    cur_child = list_entry(child_elem, struct child_thread, elem);
+    if(cur_child->tid == child_tid)
+      break;
+    child_elem = list_next(child_elem);
+  }
+  
+  if(child_elem == list_end(child_list) || cur_child->tid != child_tid)
+  {
+    return -1;
+  }
+  else
+  {
+    cur_child->is_waited = true;
+    sema_down(&cur_child->sema);
+    list_remove(child_elem);
+  }
+
+  return cur_child->exit_code;
+  /*--------------------------------------------------------*/
 }
 
 /* Free the current process's resources. */
@@ -113,6 +267,11 @@ process_exit (void)
       cur->pagedir = NULL;
       pagedir_activate (NULL);
       pagedir_destroy (pd);
+
+      /*--------------------- Added by ZL ----------------------*/ 
+      /* 打印用户进程终止信息 */
+      printf("%s: exit(%d)\n", cur->name, cur->exit_code);
+      /*--------------------------------------------------------*/ 
     }
 }
 
@@ -222,12 +381,18 @@ load (const char *file_name, void (**eip) (void), void **esp)
   process_activate ();
 
   /* Open executable file. */
+  // acquire_file_lock();
   file = filesys_open (file_name);
   if (file == NULL) 
     {
       printf ("load: %s: open failed\n", file_name);
       goto done; 
     }
+
+  /*--------------------- Added by ZL ----------------------*/ 
+  file_deny_write(file);
+  t->file_owned = file;
+  /*--------------------------------------------------------*/ 
 
   /* Read and verify executable header. */
   if (file_read (file, &ehdr, sizeof ehdr) != sizeof ehdr
@@ -312,7 +477,8 @@ load (const char *file_name, void (**eip) (void), void **esp)
 
  done:
   /* We arrive here whether the load is successful or not. */
-  file_close (file);
+  // file_close (file);
+  //  release_file_lock();
   return success;
 }
 
@@ -437,7 +603,10 @@ setup_stack (void **esp)
     {
       success = install_page (((uint8_t *) PHYS_BASE) - PGSIZE, kpage, true);
       if (success)
-        *esp = PHYS_BASE;
+        /*--------------------- Added by ZL ----------------------*/ 
+	/* 我也不知道为什么要这么改 */
+        *esp = PHYS_BASE - 12;
+        /*--------------------------------------------------------*/ 
       else
         palloc_free_page (kpage);
     }

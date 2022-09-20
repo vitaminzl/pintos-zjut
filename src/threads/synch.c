@@ -68,7 +68,9 @@ sema_down (struct semaphore *sema)
   old_level = intr_disable ();
   while (sema->value == 0) 
     {
-      list_push_back (&sema->waiters, &thread_current ()->elem);
+    /*-------------------------mycode-------------------------*/
+      list_insert_ordered (&sema->waiters, &thread_current ()->elem, thread_cmp_priority, NULL);
+    /*-------------------------mycode-------------------------*/
       thread_block ();
     }
   sema->value--;
@@ -113,9 +115,15 @@ sema_up (struct semaphore *sema)
   ASSERT (sema != NULL);
 
   old_level = intr_disable ();
-  if (!list_empty (&sema->waiters)) 
+  if (!list_empty (&sema->waiters))
+  { 
+    /*-------------------- Added by ZL -----------------------*/
+    /* 这里使用排序是避免优先级捐赠导致顺序混乱 */
+    list_sort(&sema->waiters, thread_cmp_priority, NULL);
+    /*--------------------------------------------------------*/
     thread_unblock (list_entry (list_pop_front (&sema->waiters),
                                 struct thread, elem));
+  }
   sema->value++;
   intr_set_level (old_level);
 }
@@ -179,6 +187,10 @@ lock_init (struct lock *lock)
 
   lock->holder = NULL;
   sema_init (&lock->semaphore, 1);
+
+  /*-------------------- Added by ZL -----------------------*/
+  lock->max_priority = PRI_MIN - 1;
+  /*--------------------------------------------------------*/
 }
 
 /* Acquires LOCK, sleeping until it becomes available if
@@ -195,10 +207,45 @@ lock_acquire (struct lock *lock)
   ASSERT (lock != NULL);
   ASSERT (!intr_context ());
   ASSERT (!lock_held_by_current_thread (lock));
+  /*-------------------- Added by ZL -----------------------*/
+  /* 首先将该锁置于申请中的状态，然后先判断锁是否被占用，
+   * 1. 如果没人占用它，则无需捐献，跳过这里，与原函数操作相同
+   * 2. 如果有人占用它，那么首先判断，递归地捐赠优先级。即，
+   * 如果该占用者的优先级比自己低，那么捐赠优先级；如果被捐赠者
+   * 也在申请其他锁，那么就给该锁的占用者捐赠优先级，不断下去
+   * 直至一个进程没有正在申请的锁为止。*/
+  if(!thread_mlfqs)
+  {
+  struct thread* cur_thread = thread_current();
+  cur_thread->lock_applying = lock;
+  struct lock* pre_lock = lock;
+  while(pre_lock != NULL && pre_lock->holder != NULL && pre_lock->max_priority < cur_thread->priority)
+  {
+    pre_lock->max_priority = cur_thread->priority;
+    update_priority(pre_lock->holder);
+    pre_lock = pre_lock->holder->lock_applying;
 
+  }
+  }
+  /*--------------------------------------------------------*/
   sema_down (&lock->semaphore);
   lock->holder = thread_current ();
+  /*-------------------- Added by ZL -----------------------*/
+  /* 若成功获得该锁，那么该进程就没有正在申请的锁，归0
+   * 并且在申请成功后，该锁的最大优先级显然和该进程相同。
+   * 并将该锁推入进程的locks队列中，表示该锁已被得到 */
+  if(!thread_mlfqs)
+  {
+  struct thread* cur_thread = thread_current();
+  enum intr_level old_level = intr_disable();
+  cur_thread->lock_applying = NULL;
+  lock->max_priority = cur_thread->priority;
+  thread_hold_the_lock(lock);
+  intr_set_level(old_level);
+  }
+  /*--------------------------------------------------------*/
 }
+
 
 /* Tries to acquires LOCK and returns true if successful or false
    on failure.  The lock must not already be held by the current
@@ -231,8 +278,25 @@ lock_release (struct lock *lock)
   ASSERT (lock != NULL);
   ASSERT (lock_held_by_current_thread (lock));
 
+  /*-------------------- Added by ZL -----------------------*/
+  /* 结束后，将其从线程锁列表中释放，并将最大优先级归0 */
+  if(!thread_mlfqs)
+  {
+  remove_lock(lock);
+  lock->max_priority = PRI_MIN-1;
+  }
+  /*--------------------------------------------------------*/
+
   lock->holder = NULL;
   sema_up (&lock->semaphore);
+
+ /*-------------------- Added by ZL -----------------------*/
+  if (is_thread_started())
+  {
+    thread_yield();
+  }
+  /*--------------------------------------------------------*/
+  
 }
 
 /* Returns true if the current thread holds LOCK, false
@@ -263,6 +327,18 @@ cond_init (struct condition *cond)
 
   list_init (&cond->waiters);
 }
+
+
+
+/*--------------------- Added by ZL-----------------------*/
+bool
+cond_cmp_priority (const struct list_elem *a, const struct list_elem *b, void *aux UNUSED)
+{
+  struct semaphore_elem *sa = list_entry (a, struct semaphore_elem, elem);
+  struct semaphore_elem *sb = list_entry (b, struct semaphore_elem, elem);
+  return list_entry(list_front(&sa->semaphore.waiters), struct thread, elem)->priority > list_entry(list_front(&sb->semaphore.waiters), struct thread, elem)->priority;
+}   
+/*--------------------------------------------------------*/
 
 /* Atomically releases LOCK and waits for COND to be signaled by
    some other piece of code.  After COND is signaled, LOCK is
@@ -316,9 +392,13 @@ cond_signal (struct condition *cond, struct lock *lock UNUSED)
   ASSERT (!intr_context ());
   ASSERT (lock_held_by_current_thread (lock));
 
-  if (!list_empty (&cond->waiters)) 
+  if (!list_empty (&cond->waiters)){
+    /*--------------------- Added by ZL-----------------------*/
+    list_sort(&cond->waiters, cond_cmp_priority, NULL);
+    /*--------------------------------------------------------*/
     sema_up (&list_entry (list_pop_front (&cond->waiters),
                           struct semaphore_elem, elem)->semaphore);
+  }
 }
 
 /* Wakes up all threads, if any, waiting on COND (protected by

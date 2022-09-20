@@ -1,0 +1,31 @@
+unset missions
+missions=(priority-change priority-donate-one priority-donate-multiple priority-donate-multiple2 priority-donate-nest priority-donate-sema priority-donate-lower priority-donate-chain priority-fifo priority-preempt priority-sema priority-condvar)
+if [[ $1 = "m" ]]
+then
+	cnt=0
+	for i in ${missions[*]}
+	do
+		echo $cnt:$i
+		let "cnt++"
+	done	
+else
+	# compute number of missions
+	((num=${#missions[@]}-1)) 
+	if [[ $1 && $1 != "v" && $1 -le $num && $1 -ge 0 ]]
+		then m=${missions[$1]}; unset missions; missions=($m)
+	fi
+	# execute instructions	
+	(cd build
+	for i in ${missions[*]}
+	do
+	echo ------------------------------------------------------------
+	echo "			$i			"
+	echo ------------------------------------------------------------
+	rm -f tests/threads/${i}.output
+	unset op
+	if [[ $1 = 'v' || $2 = 'v' ]]
+	then op='VERBOSE=1'
+	fi
+	make tests/threads/${i}.result $op
+	done)
+fi

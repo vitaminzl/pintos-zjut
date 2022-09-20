@@ -93,7 +93,7 @@ timer_sleep (int64_t ticks)
   int64_t start = timer_ticks ();
 
   ASSERT (intr_get_level () == INTR_ON);
-  /*-------------------------mycode-------------------------*/
+  /*-------------------- Added by ZL -----------------------*/
   /* 关闭中断，基操 */
   enum intr_level old_level = intr_disable();
       
@@ -104,7 +104,7 @@ timer_sleep (int64_t ticks)
     thread_block();
   }      
   intr_set_level(old_level);
-  /*-------------------------mycode-------------------------*/
+  /*--------------------------------------------------------*/
 }
 
 /* Sleeps for approximately MS milliseconds.  Interrupts must be
@@ -179,7 +179,7 @@ timer_print_stats (void)
 
 
 
-/*-------------------------mycode-------------------------*/
+/*-------------------- Added by ZL -----------------------*/
 
 /*对于sleep_queue中的每一个进程，都进行sleepticks--的操作，
  并检查是否到了休眠时间，即sleepticks==0?  */
@@ -189,6 +189,13 @@ check_and_unblock(struct thread* t, void*aux UNUSED)
   if (t->status == THREAD_BLOCKED && t->sleepticks > 0)
   {
     t->sleepticks --;
+   /* 
+    if(t->sleepticks % TIMER_FREQ == 0)
+    {
+    msg("%d priority %d", ticks , t->priority);
+    msg("tid:%d  nice %d", t->tid, t->nice);
+    }*/
+    
     if (t->sleepticks <= 0)
     {
       thread_unblock(t);
@@ -196,21 +203,37 @@ check_and_unblock(struct thread* t, void*aux UNUSED)
   }
 
 }
-
-
-/*-------------------------mycode-------------------------*/
+/*--------------------------------------------------------*/
 
 
 /* Timer interrupt handler. */
 static void
 timer_interrupt (struct intr_frame *args UNUSED)
 {
-  ticks++;
-  /*-------------------------mycode-------------------------*/
-
+  ticks ++;
+   /* 针对mlfqs任务  */
   thread_foreach (check_and_unblock, NULL);
+  if(thread_mlfqs)
+  {
+    /* 每个tick，正在执行进程的recent_cpu++。
+     * 空闲进程无需计算recent_cpu */
+    if(!is_idle_thread(thread_current()))
+      thread_current()->recent_cpu += INT_TO_FP(1);
+    /* 每秒种计算一次load_avg以及recent_cpu
+     * 每4个ticks(其实就是时间片长度)更新一次priority */
+    if(ticks % TIMER_FREQ == 0)
+    {
+      mlfqs_update_rc_la_pr();
+    }
+    else if(ticks % 4 == 0)
+    {
+      update_mlfqs_priority_aux(thread_current(), NULL);
+    }
+   
+  }
+  /*--------------------------------------------------------*/
 
-  /*-------------------------mycode-------------------------*/
+
   thread_tick ();
 }
 
